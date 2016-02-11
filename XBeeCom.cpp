@@ -16,8 +16,23 @@ XBeeCom::XBeeCom(String name,
 	_xbee = XBee();
 	if (_softSerial) {
 		_sserial = new SoftwareSerial(_rxPin, _txPin);
+		_hserial = NULL;
 	} else {
 		_sserial = NULL;
+		if (rxPin == 0)
+			_hserial = &Serial;
+# if defined(HAVE_HWSERIAL1)
+		if (rxPin == 1)
+			_hserial = &Serial1;
+# endif
+# if defined(HAVE_HWSERIAL2)
+		if (rxPin == 2)
+			_hserial = &Serial2;
+# endif
+# if defined(HAVE_HWSERIAL3)
+		if (rxPin == 3)
+			_hserial = &Serial3;
+# endif
 	}
 	_atResp = AtCommandResponse();
 }
@@ -26,6 +41,7 @@ XBeeCom::XBeeCom(String name): XBeeCom(name, true, 57600, 2, 3) {
 }
 
 XBeeCom::~XBeeCom() {
+	_sserial->end();
 	delete _sserial;
 }
 
@@ -34,8 +50,8 @@ void XBeeCom::begin() {
 		_sserial->begin(_baud);
 		_xbee.setSerial(*_sserial);
 	} else {
-		Serial.begin(_baud);
-		_xbee.setSerial(Serial);
+		_hserial->begin(_baud);
+		_xbee.setSerial(*_hserial);
 	}
 	// Wait until radio is associated with coordinator
 	uint8_t aiCmd[] = {'A', 'I'};
@@ -49,8 +65,8 @@ void XBeeCom::begin() {
 		}
 		//Serial.println(_atResp.getValue()[0], HEX);
 	} while (_atResp.getValueLength() != 1 || _atResp.getValue()[0] != 0);
-
-	uint8_t gwNI[] = "TG1";
+	// TODO: Perhaps gwNI shouldn't be hard coded, but for convenience, it is.
+	uint8_t gwNI[] = "GW1";
 	find64Addr(gwNI, 3, _gwAddr);
 	/*
 	Serial.println(_gwAddr.getMsb(), HEX);
@@ -196,12 +212,18 @@ AlertType XBeeCom::checkAlert(unsigned int maxRuntime) {
 					continue;
 				}
 			}
-			/*
 			if (_xbee.getResponse().getApiId() == RX_64_RESPONSE) {
 				Rx64Response rx64 = Rx64Response();
 				_xbee.getResponse().getRx64Response(rx64);
 				XBRXPacket * packet = reinterpret_cast<XBRXPacket *>(rx64.getData());
-			}*/
+				if (packet->alertpacket.h1 == MAGIC_HEADER1 &&
+						packet->alertpacket.h2 == MAGIC_HEADER2 &&
+						packet->alertpacket.msgtype == SEND_ALERT) {
+					return packet->alertpacket.alerttype;
+				} else {
+					continue;
+				}
+			}
 
 		} else {
 			return NO_ALERT;
@@ -213,6 +235,9 @@ AlertType XBeeCom::checkAlert(unsigned int maxRuntime) {
 String XBeeCom::alertName(AlertType alertCode)
 {
 	switch (alertCode) {
+	case NO_ALERT:
+		return(F("NO ALERT"));
+		break;
 	case FIRE_ALERT:
 		return(F("FIRE"));
 		break;
@@ -254,9 +279,14 @@ void XBeeCom::sendAlertBroadcast(AlertType alert) {
 	sendAlert(alert, addr64);
 }
 // Receives a XBee packet to 'resp' and casts the data to a XBRXPacket pointer 'pkt'
-int XBeeCom::receiveAndConvertPacket(Rx16Response &resp, XBRXPacket* &pkt) {
+int XBeeCom::receiveAndConvertPacket(Rx64Response &resp, XBRXPacket* &pkt) {
 	_xbee.readPacket();
 	if (_xbee.getResponse().isAvailable()) {
+		if (_xbee.getResponse().getApiId() == RX_64_RESPONSE) {
+			_xbee.getResponse().getRx64Response(resp);
+			pkt = reinterpret_cast<XBRXPacket*>(resp.getData());
+			return 0;
+		}
 		if (_xbee.getResponse().getApiId() == RX_16_RESPONSE) {
 			_xbee.getResponse().getRx16Response(resp);
 			pkt = reinterpret_cast<XBRXPacket*>(resp.getData());

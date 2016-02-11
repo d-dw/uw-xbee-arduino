@@ -144,7 +144,7 @@ public:
 	// New functions
 	void sendAlert(AlertType alert, XBeeAddress64 &addr64);
 	void sendAlertBroadcast(AlertType alert);
-	int receiveAndConvertPacket(Rx16Response &resp, XBRXPacket* &pkt);
+	int receiveAndConvertPacket(Rx64Response &resp, XBRXPacket* &pkt);
 
 private:
 
@@ -156,6 +156,7 @@ private:
 	XBee _xbee;
 	XBeeAddress64 _gwAddr;
 	SoftwareSerial* _sserial;
+	HardwareSerial* _hserial;
 	AtCommandRequest _atReq;
 	AtCommandResponse _atResp;
 
